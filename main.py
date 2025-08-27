@@ -31,12 +31,15 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS middleware
+# ✅ Updated CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://flood-vision.vercel.app"],  # your frontend domain
+    allow_origins=[
+        "https://flood-vision.vercel.app",
+        "http://localhost:3000"
+    ],
     allow_credentials=True,
-    allow_methods=["*"],  # or specify: ["GET", "POST"]
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -57,12 +60,10 @@ class AnalysisResponse(BaseModel):
 def parse_gemini_response(response_text: str) -> dict:
     """Parse Gemini AI response and extract structured data"""
     try:
-        # Try to extract JSON from the response
         json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
         if json_match:
             json_str = json_match.group()
             parsed_data = json.loads(json_str)
-            
             return {
                 "risk_level": parsed_data.get("risk_level", "Medium"),
                 "description": parsed_data.get("description", "Analysis completed"),
@@ -93,7 +94,6 @@ def parse_gemini_response(response_text: str) -> dict:
 
 @app.get("/")
 async def root():
-    """Health check endpoint"""
     return {
         "message": "Flood Detection API with Gemini AI",
         "version": "1.0.0",
@@ -103,7 +103,6 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Detailed health check"""
     return {
         "status": "healthy",
         "ai_model": "Gemini 2.0 Flash",
@@ -117,40 +116,28 @@ async def analyze_image(file: UploadFile = File(...)):
     """
     try:
         logger.info(f"Analyzing image: {file.filename}")
-        
-        # Validate file
+
+        # Validate file type
         if not file.content_type.startswith("image/"):
             raise HTTPException(status_code=400, detail="File must be an image")
-        
-        if file.size > 10 * 1024 * 1024:  # 10MB limit
-            raise HTTPException(status_code=400, detail="File size must be less than 10MB")
-        
-        # Read image data
+
+        # ✅ Fix: check file size after reading
         image_data = await file.read()
-        
-        # Convert image to PIL Image for Gemini AI
+        if len(image_data) > 10 * 1024 * 1024:  # 10MB limit
+            raise HTTPException(status_code=400, detail="File size must be less than 10MB")
+
+        # Convert to PIL Image
         try:
             image = PILImage.open(io.BytesIO(image_data))
-            
-            if image.mode != 'RGB':
-                image = image.convert('RGB')
-            
+            if image.mode != "RGB":
+                image = image.convert("RGB")
         except Exception as img_error:
             logger.error(f"Error processing image: {str(img_error)}")
             raise HTTPException(status_code=400, detail="Invalid image format")
-        
+
         prompt = """
         Analyze this terrain image for flood risk assessment.
-        
-        Please provide:
-        1. Risk Level (Low/Medium/High/Very High)
-        2. Description of the risk based on what you see
-        3. 3-5 specific recommendations
-        4. Estimated elevation in meters
-        5. Estimated distance from water bodies in meters
-        6. What water bodies or flood risks you can identify in the image
-        
-        Format your response as JSON with these fields:
+        Please provide JSON with:
         - risk_level
         - description
         - recommendations (array of strings)
@@ -158,65 +145,42 @@ async def analyze_image(file: UploadFile = File(...)):
         - distance_from_water (number)
         - image_analysis (string describing what you see)
         """
-        
+
         try:
-            model = genai.GenerativeModel('gemini-2.0-flash-exp')
+            model = genai.GenerativeModel("gemini-2.0-flash-exp")
             response = model.generate_content([prompt, image])
-            
             parsed_data = parse_gemini_response(response.text)
-            
         except Exception as ai_error:
             logger.error(f"Error calling Gemini AI: {str(ai_error)}")
             parsed_data = generate_image_risk_assessment()
-            parsed_data["image_analysis"] = "Image analysis was not available, using simulated assessment"
-        
+            parsed_data["image_analysis"] = "Image analysis unavailable, using simulated assessment"
+
         return {
             "success": True,
             **parsed_data,
             "ai_analysis": parsed_data.get("image_analysis", ""),
-            "message": "Image analysis completed successfully using Gemini AI"
+            "message": "Image analysis completed successfully"
         }
-        
+
     except Exception as e:
         logger.error(f"Error analyzing image: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 def generate_image_risk_assessment() -> dict:
-    """Generate risk assessment for image analysis"""
     import random
-    
     risk_level = random.choice(["Low", "Medium", "High", "Very High"])
-    
     descriptions = {
         "Low": "Image analysis shows low flood risk terrain.",
         "Medium": "Image analysis indicates moderate flood risk factors.",
         "High": "Image analysis reveals high flood risk characteristics.",
         "Very High": "Image analysis shows very high flood risk indicators."
     }
-    
     recommendations = {
-        "Low": [
-            "Continue monitoring terrain changes",
-            "Maintain current drainage systems",
-            "Stay informed about weather patterns"
-        ],
-        "Medium": [
-            "Improve drainage infrastructure",
-            "Consider flood monitoring systems",
-            "Develop emergency response plan"
-        ],
-        "High": [
-            "Install comprehensive flood barriers",
-            "Implement early warning systems",
-            "Consider structural reinforcements"
-        ],
-        "Very High": [
-            "Immediate flood protection measures needed",
-            "Consider relocation to higher ground",
-            "Implement comprehensive emergency protocols"
-        ]
+        "Low": ["Continue monitoring terrain changes", "Maintain current drainage systems", "Stay informed about weather patterns"],
+        "Medium": ["Improve drainage infrastructure", "Consider flood monitoring systems", "Develop emergency response plan"],
+        "High": ["Install comprehensive flood barriers", "Implement early warning systems", "Consider structural reinforcements"],
+        "Very High": ["Immediate flood protection measures needed", "Consider relocation to higher ground", "Implement comprehensive emergency protocols"]
     }
-    
     return {
         "risk_level": risk_level,
         "description": descriptions[risk_level],
@@ -226,12 +190,5 @@ def generate_image_risk_assessment() -> dict:
     }
 
 if __name__ == "__main__":
-    import os
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=port,
-        reload=True,
-        log_level="info"
-    ) 
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True, log_level="info")
