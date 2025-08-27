@@ -57,10 +57,15 @@ class AnalysisResponse(BaseModel):
     distance_from_water: float
     message: str
 
+# ✅ Fixed Gemini response parser
 def parse_gemini_response(response_text: str) -> dict:
     """Parse Gemini AI response and extract structured data"""
     try:
-        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        # Remove markdown code fences (```json ... ```)
+        cleaned_text = re.sub(r"```(?:json)?", "", response_text, flags=re.IGNORECASE).strip("` \n")
+
+        # Extract JSON from cleaned text
+        json_match = re.search(r'\{.*\}', cleaned_text, re.DOTALL)
         if json_match:
             json_str = json_match.group()
             parsed_data = json.loads(json_str)
@@ -79,7 +84,7 @@ def parse_gemini_response(response_text: str) -> dict:
                 "recommendations": ["Monitor weather conditions", "Stay informed about local alerts"],
                 "elevation": 50.0,
                 "distance_from_water": 1000.0,
-                "image_analysis": response_text
+                "image_analysis": cleaned_text
             }
     except Exception as e:
         logger.error(f"Error parsing Gemini response: {str(e)}")
