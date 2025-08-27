@@ -34,9 +34,9 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://flood-vision.vercel.app"],  # your frontend domain
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["*"],  # or specify: ["GET", "POST"]
     allow_headers=["*"],
 )
 
